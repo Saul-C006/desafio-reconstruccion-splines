@@ -116,6 +116,7 @@ def puntos_zona_borde(m, eje):
     for fila in (95, 78, 62):
         xd = borde_der(m, fila)
         pts.append((round(2 * eje - xd), fila, "simetria"))
+        ORIGENES.append((xd, fila))
     # (3) intactos: labio del cuello después de la fractura
     pts.append((776, 55, "intacto"))
     for col in (830, 890):
@@ -123,20 +124,79 @@ def puntos_zona_borde(m, eje):
     return pts
 
 
+# Punto del lado derecho intacto del que proviene cada punto "simetria"
+ORIGENES = []
+
+# Oreja derecha (intacta): filas donde nace y termina sobre el cuerpo
+OREJA_DER = (920, 1185)
+# Oreja izquierda (rota): entre el resto de su unión superior (y ≈ 1290) y el
+# muñón inferior (y ≈ 1000), es decir  y ∈ [1000, 1300] aprox.
+OREJA_IZQ = (760, 1045)
+
+
+def linea_cuerpo_izq(m):
+    """Silueta izquierda del cuerpo SIN oreja: parábola x(fila) ajustada por
+    mínimos cuadrados con los bordes medidos por encima y por debajo de la oreja."""
+    filas = list(range(690, 761, 10)) + list(range(1140, 1201, 10))
+    xs = [borde_izq(m, f) for f in filas]
+    coef = np.polyfit(filas, xs, 2)
+    return lambda f: float(np.polyval(coef, f))
+
+
 def puntos_zona_oreja(m, eje):
-    """Zona B: oreja izquierda del cuerpo. Recorrido de arriba hacia abajo."""
+    """Zona B: oreja izquierda de la parte media. Recorrido de arriba hacia abajo.
+
+    La forma (cuánto sobresale la oreja del cuerpo) se toma de la oreja derecha
+    intacta y se traslada a la altura donde están los restos de la oreja
+    izquierda (unión superior y muñón inferior)."""
     pts = []
-    for fila in (840, 895):                       # cuerpo intacto (arriba)
+    for fila in (700, 740):                        # cuerpo intacto (arriba)
         pts.append((borde_izq(m, fila), fila, "intacto"))
+    f_d0, f_d1 = OREJA_DER
+    f_i0, f_i1 = OREJA_IZQ
+    # línea del cuerpo derecho bajo la oreja derecha (recta entre sus uniones)
+    cuerpo_der = lambda f: np.interp(f, OREJA_DER, (borde_der(m, f_d0), borde_der(m, f_d1)))
+    cuerpo_izq = linea_cuerpo_izq(m)
     # (las filas 1000-1090 de la oreja derecha quedan cortadas por el borde de
     #  la foto: esa parte la reconstruye la propia interpolación del spline)
-    for fila in (940, 960, 980):                   # oreja derecha reflejada
-        pts.append((round(2 * eje - borde_der(m, fila)), fila, "simetria"))
-    for fila in (1110, 1130, 1150):               # oreja derecha reflejada
-        pts.append((round(2 * eje - borde_der(m, fila)), fila, "simetria"))
-    for fila in (1215, 1270):                     # cuerpo intacto (abajo)
+    for fila in (940, 960, 980, 1110, 1130, 1150):   # oreja derecha -> simetría
+        sobresale = borde_der(m, fila) - cuerpo_der(fila)
+        fila_izq = f_i0 + (fila - f_d0) * (f_i1 - f_i0) / (f_d1 - f_d0)
+        pts.append((round(cuerpo_izq(fila_izq) - sobresale), round(fila_izq), "simetria"))
+        ORIGENES.append((borde_der(m, fila), fila))
+    for fila in (1065, 1115):                      # muñón intacto (abajo)
         pts.append((borde_izq(m, fila), fila, "intacto"))
     return pts
+
+
+def mapa_textura_oreja(m, eje):
+    """Para cada píxel (fila, col) de la oreja izquierda reconstruida devuelve
+    el píxel equivalente de la oreja DERECHA intacta (misma posición relativa).
+    Si cae fuera de la foto, se usa el reflejo sobre el propio cuerpo."""
+    f_d0, f_d1 = OREJA_DER
+    f_i0, f_i1 = OREJA_IZQ
+    xd0, xd1 = borde_der(m, f_d0), borde_der(m, f_d1)
+    cuerpo_izq = linea_cuerpo_izq(m)
+    ancho = m.shape[1]
+
+    def mapa(filas, cols):
+        filas = np.asarray(filas, float)
+        cols = np.asarray(cols, float)
+        fs = f_d0 + (filas - f_i0) * (f_d1 - f_d0) / (f_i1 - f_i0)
+        base_i = np.array([cuerpo_izq(f) for f in filas])
+        base_d = np.interp(fs, OREJA_DER, (xd0, xd1))
+        cs = base_d + (base_i - cols)
+        fs_i = np.clip(np.round(fs).astype(int), 0, m.shape[0] - 1)
+        cs_i = np.round(cs).astype(int)
+        ok = (cs_i >= 0) & (cs_i < ancho)
+        ok[ok] &= m[fs_i[ok], cs_i[ok]]
+        # alternativa: reflejo hacia el interior del cuerpo
+        alt = np.round(2 * base_i - cols + 25).astype(int)
+        fs_out = np.where(ok, fs_i, np.round(filas).astype(int))
+        cs_out = np.where(ok, cs_i, alt)
+        return fs_out, cs_out
+
+    return mapa
 
 
 def a_cartesiano(pts, alto):
@@ -156,8 +216,12 @@ def extraer():
     filas_cuerpo = list(range(800, 900, 5)) + list(range(1220, 1400, 5))
     eje_cuerpo, _ = eje_simetria(m, filas_cuerpo)
 
+    ORIGENES.clear()
     zona_a = a_cartesiano(puntos_zona_borde(m, eje_borde), alto)
+    origen_a = [(x, alto - f) for x, f in ORIGENES]
+    ORIGENES.clear()
     zona_b = a_cartesiano(puntos_zona_oreja(m, eje_cuerpo), alto)
+    origen_b = [(x, alto - f) for x, f in ORIGENES]
 
     # guardar contorno completo (cartesiano)
     os.makedirs(DATOS, exist_ok=True)
@@ -178,6 +242,9 @@ def extraer():
         "imagen": img, "mascara": m, "contorno": c, "alto": alto, "ancho": ancho,
         "eje_borde": eje_borde, "eje_cuerpo": eje_cuerpo,
         "zona_a": zona_a, "zona_b": zona_b,
+        "origen_A": origen_a, "origen_B": origen_b,
+        "mapa_A": lambda f, c: (f, 2 * eje_borde - c),
+        "mapa_B": mapa_textura_oreja(m, eje_cuerpo),
     }
 
 

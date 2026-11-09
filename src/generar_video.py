@@ -133,9 +133,9 @@ def preparar():
     d["v_full"] = Vista(d, 0, d["ancho"], 0, d["alto"], max_lado=900)
     d["v_vasija"] = Vista(d, 220, 1536, 0, 1440, max_lado=900)
     d["v_A"] = Vista(d, 580, 960, 0, 400, max_lado=760)
-    d["v_B"] = Vista(d, 240, 560, 760, 1320, max_lado=760)
+    d["v_B"] = Vista(d, 230, 620, 620, 1160, max_lado=760)
     d["v_A_ancha"] = Vista(d, 560, 1300, 0, 420, max_lado=900)
-    d["v_B_ancha"] = Vista(d, 240, 1536, 740, 1320, max_lado=900)
+    d["v_B_ancha"] = Vista(d, 230, 1536, 640, 1240, max_lado=900)
     return d
 
 
@@ -145,11 +145,35 @@ def preparar():
 PARTES = [
     (0, 25, "Parte 1 · Presentación de la pieza"),
     (25, 50, "Parte 2 · Obtención de los puntos"),
-    (50, 75, "Parte 3 · Explicación del Spline Cúbico"),
-    (75, 120, "Parte 4 · Reconstrucción paso a paso"),
-    (120, 155, "Parte 5 · Animación final"),
-    (155, 180.1, "Parte 6 · Conclusión"),
+    (50, 90, "Parte 3 · Spline Cúbico: modelo y código"),
+    (90, 130, "Parte 4 · Reconstrucción paso a paso"),
+    (130, 158, "Parte 5 · Animación final"),
+    (158, 180.1, "Parte 6 · Conclusión"),
 ]
+
+# Línea de tiempo del video: (inicio, fin) en el video  ->  (inicio, fin) de la
+# escena original.  La escena "codigo" (1:00-1:20) muestra el método aplicado
+# en el código con los números reales.
+LINEA_TIEMPO = [
+    ((0, 50), (0, 50)),
+    ((50, 60), (50, 62)),          # fórmulas
+    ((60, 80), "codigo"),          # aplicación del método en el código
+    ((80, 90), (62, 75)),          # continuidad
+    ((90, 110), (75, 97)),         # zona A paso a paso
+    ((110, 130), (97, 119)),       # zona B paso a paso
+    ((130, 158), (120, 155)),      # animación final
+    ((158, 180.1), (155, 180)),    # conclusión
+]
+
+
+def tiempo_escena(t):
+    for (a, b), dest in LINEA_TIEMPO:
+        if a <= t < b:
+            if dest == "codigo":
+                return None
+            a2, b2 = dest
+            return a2 + (t - a) * (b2 - a2) / (b - a)
+    return 180.0
 
 
 def mmss(s):
@@ -366,14 +390,14 @@ def escena_zonas(fig, d, t):
     a1 = suave(prog(t, 16, 17)) * pulso
     a2 = suave(prog(t, 18, 19)) * pulso
     rect_zona(ax, 590, 830, 20, 380, d["alto"], COL_A, a1, "Zona A")
-    rect_zona(ax, 270, 470, 820, 1290, d["alto"], COL_B, a2, "Zona B")
+    rect_zona(ax, 250, 560, 680, 1150, d["alto"], COL_B, a2, "Zona B")
     a = suave(prog(t, 16, 17))
     lineas = [
         ("Zona A — Borde superior (labio) izquierdo", {"color": COL_A, "weight": "bold"}),
         ("  falta un tramo del labio entre el fragmento", {}),
         ("  izquierdo y el cuello (fractura).", {}),
         ("Zona B — Oreja izquierda de la parte media", {"color": COL_B, "weight": "bold"}),
-        ("  solo queda el muñón roto de la oreja.", {}),
+        ("  solo quedan sus restos: unión (y≈1290) y muñón (y≈1000).", {}),
         ("", {}),
         ("¿Por qué estas zonas?", {"color": ACENTO, "weight": "bold"}),
         ("• La vasija es un sólido de revolución: su perfil", {}),
@@ -487,11 +511,13 @@ def escena_puntos(fig, d, t, z, t0, t1):
     eje = d["eje_borde"] if z == "A" else d["eje_cuerpo"]
     ax.plot([eje, eje], [v.extent[2], v.extent[3]], ls="--", color=ACENTO, lw=1.5, alpha=0.8)
     # líneas de reflexión para los puntos guía
-    for i in range(int(n_vis)):
+    origenes = iter(d["origen_" + z])
+    for i in range(len(P)):
         if tipos[i] == "simetria":
-            xs = 2 * eje - P[i, 0]
-            ax.plot([xs, P[i, 0]], [P[i, 1], P[i, 1]], ls=":", color=COL_SIM, lw=1.2)
-            ax.scatter(xs, P[i, 1], s=22, marker="s", c=COL_SIM, zorder=9)
+            xs, ys = next(origenes)
+            if i < int(n_vis):
+                ax.plot([xs, P[i, 0]], [ys, P[i, 1]], ls=":", color=COL_SIM, lw=1.2)
+                ax.scatter(xs, ys, s=22, marker="s", c=COL_SIM, zorder=9)
     dibujar_puntos(ax, d, z, n_vis, fs=8, tam=38)
     ax.text(v.extent[0] + 10, v.extent[2] + 10,
             "● intacto (medido)     ● simetría (reflejado del lado derecho ■)",
@@ -820,7 +846,7 @@ def escena_conclusion(fig, d, t):
     secciones = [
         ("¿Qué se reconstruyó?", COL_A,
          "El tramo faltante del labio superior izquierdo (12 puntos, 11 tramos)\n"
-         "y la oreja izquierda de la parte media del cuerpo (10 puntos, 9 tramos)."),
+         "y la oreja izquierda de la parte media, entre y ≈ 1000 y 1300 (10 puntos, 9 tramos)."),
         ("Utilidad de los Splines Cúbicos", ACENTO,
          "Curvas suaves (C²) que pasan exactamente por los puntos medidos,\n"
          "sin las oscilaciones de un polinomio único de grado alto."),
@@ -851,9 +877,180 @@ def escena_conclusion(fig, d, t):
 
 
 # ---------------------------------------------------------------------------
-def dibujar_cuadro(fig, d, t):
+CODIGO_METODO = [
+    "t = [0] + cumsum(norm(P[i+1] - P[i]))   # parámetro t",
+    "a = x.copy()                            # a_i = x_i",
+    "h = diff(t)                             # h_i = t_i+1 - t_i",
+    "for i in range(1, n):                   # sistema tridiagonal",
+    "    sub[i]  = h[i-1]",
+    "    diag[i] = 2*(h[i-1] + h[i])",
+    "    sup[i]  = h[i]",
+    "    rhs[i]  = 3*((a[i+1]-a[i])/h[i] - (a[i]-a[i-1])/h[i-1])",
+    "diag[0] = diag[n] = 1;  rhs[0] = rhs[n] = 0   # natural",
+    "c = resolver_tridiagonal(sub, diag, sup, rhs) # Thomas",
+    "for i in range(n):",
+    "    b[i] = (a[i+1]-a[i])/h[i] - h[i]*(2*c[i]+c[i+1])/3",
+    "    d[i] = (c[i+1]-c[i]) / (3*h[i])",
+    "X(t) = a[i] + b[i]*u + c[i]*u**2 + d[i]*u**3   # u = t - t_i",
+]
+# (segundo de inicio, líneas resaltadas, etapa)
+ETAPAS_CODIGO = [
+    (0, (0, 1), "Datos: parámetro t y a_i = x_i"),
+    (3, (2, 2), "Paso 1: amplitudes h_i de cada intervalo"),
+    (6, (3, 8), "Paso 2: se arma el sistema tridiagonal A·c = r"),
+    (11, (9, 9), "Paso 3: se resuelve con el algoritmo de Thomas → c_i"),
+    (14, (10, 12), "Paso 4: se obtienen b_i y d_i de cada tramo"),
+    (17, (13, 13), "Paso 5: se evalúa el spline y se dibuja la curva"),
+]
+
+
+def datos_metodo(sp):
+    """Recalcula (para mostrar) todos los valores intermedios del método para X(t)."""
+    S = sp.Sx
+    t = sp.t
+    x = sp.P[:, 0]
+    n = len(t) - 1
+    h = np.diff(t)
+    A = np.zeros((n + 1, n + 1))
+    r = np.zeros(n + 1)
+    A[0, 0] = A[n, n] = 1
+    for i in range(1, n):
+        A[i, i - 1] = h[i - 1]
+        A[i, i] = 2 * (h[i - 1] + h[i])
+        A[i, i + 1] = h[i]
+        r[i] = 3 * ((x[i + 1] - x[i]) / h[i] - (x[i] - x[i - 1]) / h[i - 1])
+    c = np.concatenate([S.c, [0.0]])
+    return t, x, h, A, r, c, S.b, S.d
+
+
+def escena_codigo(fig, d, r):
+    """Parte 3b: el método de splines cúbicos aplicado en el código, paso a paso,
+    con los valores numéricos reales de la Zona B (coordenada X)."""
+    sp = d["spline_B"]
+    t, x, h, A, rhs, c, b, dd = datos_metodo(sp)
+    n = len(t) - 1
+    k = max(i for i, e in enumerate(ETAPAS_CODIGO) if e[0] <= r)
+    _, (l0, l1), titulo = ETAPAS_CODIGO[k]
+
+    # --- código con la línea en ejecución resaltada ---------------------------
+    ax = fig.add_axes([0.015, 0.08, 0.47, 0.83])
+    ax.set_axis_off()
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.add_patch(FancyBboxPatch((0, 0), 1, 1, boxstyle="round,pad=0,rounding_size=0.02",
+                                color="#0d0f14", ec="#3a404d"))
+    ax.text(0.03, 0.965, "spline_cubico.py — SplineCubicoNatural.__init__", fontsize=10.5,
+            color=ACENTO, va="top", family="DejaVu Sans Mono", weight="bold")
+    ax.text(0.03, 0.915, "Aplicación del método · Zona B (oreja) · coordenada X(t)",
+            fontsize=10, color=COL_B, va="top")
+    y0, dy = 0.84, 0.052
+    for i, ln in enumerate(CODIGO_METODO):
+        activo = l0 <= i <= l1
+        if activo:
+            ax.add_patch(Rectangle((0.015, y0 - i * dy - dy * 0.78), 0.97, dy * 0.95,
+                                   color="#3d3418"))
+        ax.text(0.025, y0 - i * dy, f"{i + 1:2d}", fontsize=8.5, color="#5d6b80", va="top",
+                family="DejaVu Sans Mono")
+        ax.text(0.075, y0 - i * dy, ln, fontsize=8.6, va="top", family="DejaVu Sans Mono",
+                color="#fff3c4" if activo else "#a5d6a7")
+    ax.text(0.03, 0.08, "▶ " + titulo, fontsize=11.5, color=ACENTO, weight="bold", va="center")
+
+    # --- tabla de valores (crece por columnas) --------------------------------
+    cols = [("i", lambda i: f"{i}"), ("t_i", lambda i: f"{t[i]:.1f}"),
+            ("a_i=x_i", lambda i: f"{x[i]:.0f}")]
+    if k >= 1:
+        cols.append(("h_i", lambda i: f"{h[i]:.1f}" if i < n else ""))
+    if k >= 3:
+        cols.append(("c_i", lambda i: f"{c[i]:+.2e}"))
+    if k >= 4:
+        cols.append(("b_i", lambda i: f"{b[i]:+.3f}" if i < n else ""))
+        cols.append(("d_i", lambda i: f"{dd[i]:+.2e}" if i < n else ""))
+    axt = fig.add_axes([0.5, 0.08, 0.485, 0.42])
+    axt.set_axis_off()
+    axt.set_xlim(0, 1)
+    axt.set_ylim(0, 1)
+    axt.add_patch(FancyBboxPatch((0, 0), 1, 1, boxstyle="round,pad=0,rounding_size=0.02",
+                                 color=PANEL))
+    anchos = [0.05, 0.12, 0.13, 0.12, 0.17, 0.15, 0.17]
+    xc = 0.03
+    for j, (nom, f) in enumerate(cols):
+        nueva = (k >= 1 and nom == "h_i" and k == 1) or (nom == "c_i" and k == 3) or \
+                (nom in ("b_i", "d_i") and k == 4)
+        color = ACENTO if nueva else TEXTO
+        axt.text(xc, 0.94, nom, fontsize=9.5, color=ACENTO, va="top", weight="bold",
+                 family="DejaVu Sans Mono")
+        for i in range(n + 1):
+            axt.text(xc, 0.84 - i * 0.078, f(i), fontsize=8.8, va="top", color=color,
+                     family="DejaVu Sans Mono")
+        xc += anchos[j]
+
+    # --- parte superior derecha: sistema / gráfico ----------------------------
+    rect = [0.5, 0.53, 0.485, 0.38]
+    if k < 2:
+        panel_texto(fig, rect, [
+            (f"{n + 1} puntos de control  →  {n} tramos cúbicos", {}),
+            ("t = longitud de cuerda acumulada (px)", {"color": TENUE}),
+            ("Se resuelve igual para X(t) y para Y(t).", {"color": TENUE}),
+            ("Los números que aparecen son los que", {}),
+            ("calcula el programa en este momento.", {}),
+        ], titulo="Zona B · oreja lateral", inter=0.14, tam=12)
+    elif k < 5:
+        axm = fig.add_axes(rect)
+        axm.set_axis_off()
+        axm.set_xlim(0, 1)
+        axm.set_ylim(0, 1)
+        axm.add_patch(FancyBboxPatch((0, 0), 1, 1, boxstyle="round,pad=0,rounding_size=0.02",
+                                     color=PANEL))
+        axm.text(0.03, 0.95, "Sistema tridiagonal  A · c = r", fontsize=11, color=ACENTO,
+                 weight="bold", va="top")
+        m = n + 1
+        x0, y0, cw, ch = 0.03, 0.82, 0.068, 0.074
+        for i in range(m):
+            for j in range(m):
+                v = A[i, j]
+                txt = "·" if v == 0 else f"{v:.0f}"
+                col = ACENTO if (i == j and v != 0) else (TEXTO if v != 0 else "#4a5160")
+                axm.text(x0 + j * cw, y0 - i * ch, txt, fontsize=7.4, va="top",
+                         family="DejaVu Sans Mono", color=col)
+            axm.text(x0 + m * cw + 0.01, y0 - i * ch, f"{rhs[i]:+.3f}", fontsize=7.4,
+                     va="top", family="DejaVu Sans Mono", color=COL_B)
+        axm.text(x0 + m * cw + 0.01, y0 + 0.07, "r", fontsize=9, color=COL_B, va="top")
+    else:
+        axg = fig.add_axes([0.53, 0.56, 0.2, 0.33])
+        axg.set_facecolor("#0d0f14")
+        fr = prog(r, 17, 19.5)
+        for i in range(sp.n):
+            if i / sp.n > fr:
+                break
+            ts = np.linspace(sp.t[i], sp.t[i + 1], 40)
+            axg.plot(ts, sp.Sx(ts, tramo=i), color=COLORES_TRAMO[i % 11], lw=2.2)
+        axg.scatter(t, x, s=14, c="w", zorder=5)
+        axg.set_title("X(t) evaluado por tramos", fontsize=9, color=TEXTO)
+        axg.tick_params(labelsize=7)
+        for s_ in axg.spines.values():
+            s_.set_color("#3a404d")
+        axc = fig.add_axes([0.77, 0.56, 0.2, 0.33])
+        axc.set_facecolor("#0d0f14")
+        P = sp.P
+        axc.scatter(P[:, 0], P[:, 1], s=14, c="w", zorder=5)
+        dibujar_curva(axc, d, "B", frac=fr, lw=2.2)
+        axc.set_aspect("equal", adjustable="datalim")
+        axc.set_title("Curva (X(t), Y(t))", fontsize=9, color=TEXTO)
+        axc.tick_params(labelsize=7)
+        for s_ in axc.spines.values():
+            s_.set_color("#3a404d")
+
+
+def dibujar_cuadro(fig, d, t_video):
     fig.clf()
     fig.patch.set_facecolor(FONDO)
+    t = tiempo_escena(t_video)
+    if t is None:
+        escena_codigo(fig, d, t_video - 60)
+        cabecera(fig, t_video)
+        pie(fig, 62)
+        fundido(fig, t_video)
+        return
     if t < 7:
         escena_titulo(fig, d, t)
         return
@@ -881,9 +1078,13 @@ def dibujar_cuadro(fig, d, t):
         escena_final(fig, d, t)
     else:
         escena_conclusion(fig, d, t)
-    cabecera(fig, t)
+    cabecera(fig, t_video)
     pie(fig, t)
-    # fundido entre partes
+    fundido(fig, t_video)
+
+
+def fundido(fig, t):
+    """Fundido a negro breve entre partes."""
     for a, _, _ in PARTES[1:]:
         if abs(t - a) < 0.35:
             ax = fig.add_axes([0, 0, 1, 1])

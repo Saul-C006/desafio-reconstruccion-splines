@@ -65,7 +65,7 @@ def poligono_oreja(sp, alto):
     """Zona B: curva completa de la oreja + cierre por dentro del cuerpo."""
     curva = _curva_px(sp, 0, sp.n, alto)
     f0, f1 = curva[0, 1], curva[-1, 1]
-    cierre = np.array([[455, f1], [455, f0]], dtype=float)
+    cierre = np.array([[620, f1], [620, f0]], dtype=float)
     return np.vstack([curva, cierre])
 
 
@@ -77,21 +77,28 @@ def reconstruir(d):
     rec_total = np.zeros((alto, ancho), bool)
     color_medio = img[m].reshape(-1, 3).mean(axis=0)
 
-    for clave, eje in (("poligono_A", d["eje_borde"]), ("poligono_B", d["eje_cuerpo"])):
+    for clave, mapa in (("poligono_A", d["mapa_A"]), ("poligono_B", d["mapa_B"])):
         pol = np.zeros((alto, ancho), np.uint8)
         cv2.fillPoly(pol, [np.round(d[clave]).astype(np.int32)], 255)
         faltante = (pol > 0) & (~m)
         filas, cols = np.nonzero(faltante)
-        src = np.round(2 * eje - cols).astype(int)
-        dentro = (src >= 0) & (src < ancho)
-        src_c = np.clip(src, 0, ancho - 1)
-        tex = img[filas, src_c].astype(float)
-        # si el pixel reflejado cae fuera de la foto o no es cerámica -> color medio
-        ok = dentro & m[filas, src_c]
+        sf, sc = mapa(filas, cols)
+        sf = np.clip(np.round(sf).astype(int), 0, alto - 1)
+        sc = np.round(sc).astype(int)
+        dentro = (sc >= 0) & (sc < ancho)
+        sc_c = np.clip(sc, 0, ancho - 1)
+        tex = img[sf, sc_c].astype(float)
+        # si el pixel de origen cae fuera de la foto o no es cerámica -> color medio
+        ok = dentro & m[sf, sc_c]
         ruido = np.random.default_rng(0).normal(0, 6, (len(filas), 3))
         tex[~ok] = color_medio + ruido[~ok]
         img[filas, cols] = np.clip(tex, 0, 255).astype(np.uint8)
         rec_total |= faltante
+        # contorno sutil siguiendo la curva del spline
+        borde_pol = np.zeros((alto, ancho), np.uint8)
+        cv2.polylines(borde_pol, [np.round(d[clave]).astype(np.int32)], True, 255, 3)
+        sel = (borde_pol > 0) & faltante
+        img[sel] = (img[sel] * 0.6).astype(np.uint8)
 
     # suavizar la transición
     borde = cv2.dilate(rec_total.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
