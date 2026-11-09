@@ -1,0 +1,5 @@
+numpy
+matplotlib
+opencv-python-headless
+scipy        # solo para validar la implementación propia del spline
+# además se necesita ffmpeg instalado en el sistema para generar el MP4
